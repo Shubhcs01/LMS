@@ -225,3 +225,6 @@ cd backend
 npx tsx src/scripts/testE2E.ts
 ```
 
+# Video Walkthrough
+https://drive.google.com/file/d/167xfUJBKTaK2gJ3tPTfa2XqFfu96V7ni/view?usp=sharing
+
