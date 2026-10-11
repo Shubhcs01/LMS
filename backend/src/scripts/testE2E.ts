@@ -1,4 +1,7 @@
-import fetch from 'node:fs'; // placeholder to test tsx node fetch
+async function fetchJson<T = any>(url: string, init?: RequestInit): Promise<T> {
+  const res = await globalThis.fetch(url, init);
+  return (await res.json()) as T;
+}
 
 async function runTests() {
   const BASE_URL = 'http://localhost:5000/api';
@@ -20,20 +23,20 @@ async function runTests() {
   }
 
   // 1. Health & Demo Accounts
-  const healthRes = await globalThis.fetch(`${BASE_URL}/health`).then((r) => r.json());
+  const healthRes = await fetchJson(`${BASE_URL}/health`);
   assert(healthRes.status === 'OK', 'Backend Health Check returns OK');
 
-  const demoRes = await globalThis.fetch(`${BASE_URL}/demo-accounts`).then((r) => r.json());
+  const demoRes = await fetchJson(`${BASE_URL}/demo-accounts`);
   assert(demoRes.accounts?.length === 6, 'Demo accounts endpoint returns all 6 seeded roles');
 
   // 2. Auth: Login as Borrower
-  const borrowerLogin = await globalThis.fetch(`${BASE_URL}/auth/login`, {
+  const borrowerLogin = await fetchJson(`${BASE_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'borrower@lms.com', password: 'Password@123' }),
-  }).then((r) => r.json());
+  });
   assert(borrowerLogin.success && borrowerLogin.token, 'Login as Borrower successful');
-  const borrowerToken = borrowerLogin.token;
+  const borrowerToken: string = borrowerLogin.token;
 
   // 3. RBAC Test: Borrower trying to access Sanction Queue -> must return 403 Forbidden!
   const forbiddenCheck = await globalThis.fetch(`${BASE_URL}/loans/queue/sanction`, {
@@ -55,7 +58,7 @@ async function runTests() {
     }),
   });
   assert(breAgeFail.status === 422, 'BRE Rejection: Age < 23 triggers 422 Unprocessable Entity');
-  const breAgeData = await breAgeFail.json();
+  const breAgeData: any = await breAgeFail.json();
   assert(breAgeData.breResult?.checks?.ageCheck?.passed === false, 'BRE Rejection: ageCheck.passed is false');
 
   // 4b. Salary below ₹25,000 (declared ₹18,000)
@@ -102,7 +105,7 @@ async function runTests() {
 
   // 5. Complete Lifecycle Test with a Brand New Borrower
   const newEmail = `tester-${Date.now()}@example.com`;
-  const registerRes = await globalThis.fetch(`${BASE_URL}/auth/register`, {
+  const registerRes = await fetchJson(`${BASE_URL}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -111,25 +114,25 @@ async function runTests() {
       password: 'Password@123',
       phone: '+91 99999 88888',
     }),
-  }).then((r) => r.json());
+  });
   assert(registerRes.success && registerRes.token, 'Step 1: New borrower registered successfully');
-  const newBorrowerToken = registerRes.token;
+  const newBorrowerToken: string = registerRes.token;
 
   // Verify that registering created a lead in Sales pipeline
-  const salesLogin = await globalThis.fetch(`${BASE_URL}/auth/login`, {
+  const salesLogin = await fetchJson(`${BASE_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'sales@lms.com', password: 'Password@123' }),
-  }).then((r) => r.json());
-  const salesToken = salesLogin.token;
+  });
+  const salesToken: string = salesLogin.token;
 
-  const leadsRes = await globalThis.fetch(`${BASE_URL}/leads?search=${encodeURIComponent(newEmail)}`, {
+  const leadsRes = await fetchJson(`${BASE_URL}/leads?search=${encodeURIComponent(newEmail)}`, {
     headers: { Authorization: `Bearer ${salesToken}` },
-  }).then((r) => r.json());
+  });
   assert(leadsRes.leads?.length >= 1, 'Sales Module: Registered borrower tracked as lead in Sales pipeline');
 
   // Step 2: Valid Personal Details + BRE Pass
-  const brePassRes = await globalThis.fetch(`${BASE_URL}/borrower/eligibility`, {
+  const brePassRes = await fetchJson(`${BASE_URL}/borrower/eligibility`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${newBorrowerToken}` },
     body: JSON.stringify({
@@ -139,13 +142,13 @@ async function runTests() {
       monthlySalary: 75000,
       employmentMode: 'Salaried',
     }),
-  }).then((r) => r.json());
+  });
   assert(brePassRes.success && brePassRes.breResult?.passed === true, 'Step 2: BRE evaluation PASSED with valid details');
 
   // Step 3: Math verification for Loan Config
-  const mathCalc = await globalThis.fetch(`${BASE_URL}/borrower/calculate?amount=120000&tenureDays=120`, {
+  const mathCalc = await fetchJson(`${BASE_URL}/borrower/calculate?amount=120000&tenureDays=120`, {
     headers: { Authorization: `Bearer ${newBorrowerToken}` },
-  }).then((r) => r.json());
+  });
   // P = 120,000, R = 12, T = 120 -> SI = (120000 * 12 * 120) / (365 * 100) = 4734.25, Total = 124,734.25
   const expectedSI = Math.round(((120000 * 12 * 120) / 36500) * 100) / 100;
   assert(
@@ -154,7 +157,7 @@ async function runTests() {
   );
 
   // Apply for Loan -> APPLIED
-  const applyRes = await globalThis.fetch(`${BASE_URL}/borrower/apply`, {
+  const applyRes = await fetchJson(`${BASE_URL}/borrower/apply`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${newBorrowerToken}` },
     body: JSON.stringify({
@@ -168,37 +171,37 @@ async function runTests() {
         size: 150000,
       },
     }),
-  }).then((r) => r.json());
+  });
   assert(applyRes.success && applyRes.loan?.status === 'APPLIED', `Step 4: Loan created in APPLIED status (ID: ${applyRes.loan?.loanId})`);
   const createdLoanId = applyRes.loan._id;
 
   // Sanction Stage: Login as Sanction Executive and Approve
-  const sanctionLogin = await globalThis.fetch(`${BASE_URL}/auth/login`, {
+  const sanctionLogin = await fetchJson(`${BASE_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'sanction@lms.com', password: 'Password@123' }),
-  }).then((r) => r.json());
-  const sanctionToken = sanctionLogin.token;
+  });
+  const sanctionToken: string = sanctionLogin.token;
 
-  const approveRes = await globalThis.fetch(`${BASE_URL}/loans/${createdLoanId}/sanction`, {
+  const approveRes = await fetchJson(`${BASE_URL}/loans/${createdLoanId}/sanction`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sanctionToken}` },
     body: JSON.stringify({
       decision: 'APPROVE',
       remarks: 'Verified bank statements and KYC. Sanction approved.',
     }),
-  }).then((r) => r.json());
+  });
   assert(approveRes.success && approveRes.loan?.status === 'SANCTIONED', 'Sanction Module: Transition APPLIED -> SANCTIONED');
 
   // Disbursement Stage: Login as Disbursement Executive and Disburse
-  const disburseLogin = await globalThis.fetch(`${BASE_URL}/auth/login`, {
+  const disburseLogin = await fetchJson(`${BASE_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'disbursement@lms.com', password: 'Password@123' }),
-  }).then((r) => r.json());
-  const disburseToken = disburseLogin.token;
+  });
+  const disburseToken: string = disburseLogin.token;
 
-  const disburseRes = await globalThis.fetch(`${BASE_URL}/loans/${createdLoanId}/disburse`, {
+  const disburseRes = await fetchJson(`${BASE_URL}/loans/${createdLoanId}/disburse`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${disburseToken}` },
     body: JSON.stringify({
@@ -207,22 +210,22 @@ async function runTests() {
       bankIfsc: 'HDFC0001234',
       remarks: 'Funds released via RTGS',
     }),
-  }).then((r) => r.json());
+  });
   assert(disburseRes.success && disburseRes.loan?.status === 'DISBURSED', 'Disbursement Module: Transition SANCTIONED -> DISBURSED');
 
   // Collection Stage: Login as Collection Executive and record payments
-  const collectionLogin = await globalThis.fetch(`${BASE_URL}/auth/login`, {
+  const collectionLogin = await fetchJson(`${BASE_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'collection@lms.com', password: 'Password@123' }),
-  }).then((r) => r.json());
-  const collectionToken = collectionLogin.token;
+  });
+  const collectionToken: string = collectionLogin.token;
 
-  const totalDue = disburseRes.loan.repaymentDetails.totalRepayment;
+  const totalDue: number = disburseRes.loan.repaymentDetails.totalRepayment;
   const uniqueUtr = `UTR${Date.now()}`;
 
   // 1. Test duplicate UTR check
-  const payRes1 = await globalThis.fetch(`${BASE_URL}/payments`, {
+  const payRes1 = await fetchJson(`${BASE_URL}/payments`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${collectionToken}` },
     body: JSON.stringify({
@@ -232,7 +235,7 @@ async function runTests() {
       paymentMode: 'IMPS',
       remarks: 'Full settlement payment',
     }),
-  }).then((r) => r.json());
+  });
   assert(payRes1.success && payRes1.loan?.autoClosed === true, 'Collection Module: Full payment received -> Auto-closed loan to CLOSED');
 
   // 2. Test duplicate UTR rejection
